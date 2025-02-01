@@ -1,19 +1,19 @@
 import asyncio
 import json
+import logging
 import sys
 import time
 import types
 import uuid
-from aiohttp import TraceConfig
-from aiohttp_retry import RetryClient, ExponentialRetry
+
 import aiohttp
 import requests
-import logging
-
+from aiohttp import TraceConfig
+from aiohttp_retry import RetryClient, ExponentialRetry
 from sqlmodel import Session, select
 
 from configuration import keyvault
-from data.database import LoadTest, engine
+from data.database import LoadTest
 from models.datamodels import TestDetails
 from utils.crud import get_run_count_for_test_id
 
@@ -138,7 +138,7 @@ def load(env, dag, count, session: Session):
     return {"trigger": "success", "test_id": test_id}
 
 
-async def workflow_status(aio_session, env, dag_name, test_record, token, session:Session):
+async def workflow_status(aio_session, env, dag_name, test_record, token, session: Session):
     run_id = test_record.run_id
     print(f"Fetching Workflow status of {run_id=} for {dag_name=} on {env=}")
     data_partition_id = keyvault[env]["data_partition_id"]
@@ -155,9 +155,9 @@ async def workflow_status(aio_session, env, dag_name, test_record, token, sessio
             if response.status == 200 and json_response['status'] in ['success', 'failed']:
                 # record = session.exec(select(LoadTest).where(LoadTest.run_id == run_id)).first()
                 test_record.success_timestamp = json_response['endTimeStamp'] if json_response[
-                                                                                       'status'] == 'success' else None
+                                                                                     'status'] == 'success' else None
                 test_record.failed_timestamp = json_response['endTimeStamp'] if json_response[
-                                                                                      'status'] == 'failed' else None
+                                                                                    'status'] == 'failed' else None
                 session.add(test_record)
                 session.commit()
                 session.refresh(test_record)
@@ -170,26 +170,29 @@ async def workflow_status(aio_session, env, dag_name, test_record, token, sessio
         print(f"Error: {e}")
 
 
-async def async_status(test_id, session:Session):
+async def async_status(test_id, session: Session):
     print("I am in async status")
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
     env = test_record.env_name
     dag_name = test_record.workflow_name
-    token = get_token(env)
-    tests = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).all()
+    tests = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)
+                         .where(LoadTest.success_timestamp.is_(None))
+                         ).all()
     for test in tests:
         print(test.run_id)
+        print(f"{test.success_timestamp is None}")
+
     async with aiohttp.ClientSession() as aio_session:
+        token = get_token(env)
         tasks = [workflow_status(aio_session, env, dag_name, test, token, session) for test in tests]
         return await asyncio.gather(*tasks)
 
 
 def get_test_details(test_id, session):
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
-    test_details = TestDetails(env = test_record.env_name,
-                               workflow_name = test_record.workflow_name,
-                               trigger_timestamp = test_record.submitted_timestamp,
-                               run_count = get_run_count_for_test_id(test_id,session))
+    test_details = TestDetails(env=test_record.env_name,
+                               workflow_name=test_record.workflow_name,
+                               trigger_timestamp=test_record.submitted_timestamp,
+                               run_count=get_run_count_for_test_id(test_id, session))
 
     return test_details
-

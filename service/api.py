@@ -4,10 +4,10 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session
 
 from data.database import engine
-from models.datamodels import TestDetails
+from models.datamodels import TestDetails, TestReport
 from utils import crud
 from utils.crud import get_summary, clear_database
-from .workflow_service import load, async_status, get_test_details
+from .workflow_service import load, async_status, get_test_details, generate_report
 
 router = APIRouter()
 
@@ -19,8 +19,10 @@ def get_session():
 
 @router.get("/load")
 def bulk_loader(
-        env: str = Query("evt-ltops", description="Environment value"),
-        dag: str = Query("csv_parser_wf_status_gsm", description="DAG name"),
+        env: str = Query(["evd-ltops", "evt-ltops", "prod-canary-ltops", "prod-aws-ltops", "prod-qanoc-ltops"],
+                         description="Environment value"),
+        dag: str = Query(["csv_parser_wf_status_gsm", "wellbore_ingestion_wf_gsm", "doc_ingestor_azure_ocr_wf",
+                          "shapefile_ingestor_wf_status_gsm"], description="DAG name"),
         count: int = Query(1, description="Number of items to process"),
         session: Session = Depends(get_session)):
     return load(env, dag, count, session)
@@ -63,6 +65,11 @@ async def update_status(test_id: str, session: Session = Depends(get_session)):
     return await async_status(test_id, session)
 
 
-@router.get("/test_details/{test_id}",response_model=TestDetails)
+@router.get("/test_details/{test_id}", response_model=TestDetails)
 def test_details(test_id: str, session: Session = Depends(get_session)):
     return get_test_details(test_id, session)
+
+
+@router.get("/report/{test_id}", response_model=TestReport)
+def report(test_id: str, session: Session = Depends(get_session)):
+    return generate_report(test_id, session)

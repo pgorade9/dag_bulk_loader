@@ -10,11 +10,12 @@ import aiohttp
 import requests
 from aiohttp import TraceConfig
 from aiohttp_retry import RetryClient, ExponentialRetry
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from configuration import keyvault
 from data.database import LoadTest
-from models.datamodels import TestDetails
+from models.datamodels import TestDetails, TestReport
 from utils.crud import get_run_count_for_test_id
 
 handler = logging.StreamHandler(sys.stdout)
@@ -119,22 +120,14 @@ async def sleep():
 
 
 def load(env, dag, count, session: Session):
-    start_time = time.time()
-    ######## Using Asyncio ###############
-    envs_ltops = ["evd-ltops", "evt-ltops", "prod-canary-ltops", "prod-aws-ltops", "prod-qanoc-ltops"]
-    dags_ltops = ["csv_parser_wf_status_gsm", "wellbore_ingestion_wf_gsm", "doc_ingestor_azure_ocr_wf",
-                  "shapefile_ingestor_wf_status_gsm"]
-
     test_id = str(uuid.uuid4())
-    # count = 1
+
     batch_size = 1
 
     batches = int(count / batch_size)
     for i in range(0, batches):
         asyncio.run(async_workflow(env, dag, batch_size, test_id, session))
 
-    end_time = time.time()
-    print(f"Net Time = {end_time - start_time}")
     return {"trigger": "success", "test_id": test_id}
 
 
@@ -175,6 +168,8 @@ async def async_status(test_id, session: Session):
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
     env = test_record.env_name
     dag_name = test_record.workflow_name
+
+    # check status only for missing ones
     tests = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)
                          .where(LoadTest.success_timestamp.is_(None))
                          ).all()
@@ -196,3 +191,32 @@ def get_test_details(test_id, session):
                                run_count=get_run_count_for_test_id(test_id, session))
 
     return test_details
+
+
+def generate_report(test_id, session):
+    test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
+    success_records = session.exec(select(LoadTest)
+                                   .where(LoadTest.test_id == test_id)
+                                   .where(LoadTest.success_timestamp.is_not(None))
+                                   ).all()
+    success_count = len(success_records)
+    total_runs = get_run_count_for_test_id(test_id, session)
+    failed_records = session.exec(select(LoadTest)
+                                  .where(LoadTest.test_id == test_id)
+                                  .where(LoadTest.failed_timestamp.is_not(None))
+                                  ).all()
+    failed_count = len(failed_records)
+
+    start_time = min([record.submitted_timestamp for record in success_records])
+    end_time = max([record.success_timestamp for record in success_records])
+    time_taken = (end_time - start_time) / (1000 * 60)
+    test_report = TestReport(env=test_record.env_name,
+                             workflow_name=test_record.workflow_name,
+                             trigger_timestamp=test_record.submitted_timestamp,
+                             run_count=total_runs,
+                             success_count=success_count,
+                             failed_count=failed_count,
+                             success_percentage=100 * (success_count / total_runs),
+                             failed_percentage=100 * (failed_count / total_runs),
+                             time_taken_minutes=time_taken)
+    return test_report

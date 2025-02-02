@@ -155,6 +155,8 @@ async def workflow_status(aio_session, env, dag_name, test_record, token, sessio
                 session.commit()
                 session.refresh(test_record)
                 return json_response['status']
+            elif response.status == 200 and json_response['status'] == 'running':
+                return json_response['status']
             else:
                 print(f"Run-Id: {run_id}: Response status code unchanged = {response.status}")
                 print("Please wait !!")

@@ -22,8 +22,12 @@ def get_session():
 
 @router.get("/load")
 def bulk_loader(
-        env: str = Query("evt-ltops", description="Environment value"),
-        dag: str = Query("csv_parser_wf_status_gsm", description="DAG name"),
+        env: str = Query(None, description="Environment value",
+                         enum=["evt-ltops", "adme-outerloop", "mde-ltops", "prod-canary-ltops", "prod-aws-ltops",
+                               "prod-qanoc-ltops"]),
+        dag: str = Query(None, description="DAG name",
+                         enum=["csv_parser_wf_status_gsm", "wellbore_ingestion_wf_gsm", "doc_ingestor_azure_ocr_wf",
+                               "shapefile_ingestor_wf_status_gsm"]),
         count: int = Query(1, description="Number of items to process"),
         session: Session = Depends(get_session)):
     return load(env, dag, count, session)

@@ -45,13 +45,16 @@ def export_to_excel(test_id: str, session: Session = Depends(get_session)):
 
     # Convert to pandas DataFrame
     data = [test.dict() for test in tests]  # Convert to dict format
+    column_order=['id','env_name', 'workflow_name','test_id','run_id','correlation_id',
+                  'submitted_timestamp','success_timestamp','failed_timestamp']
     df = pd.DataFrame(data)
+    df = df[column_order]
 
     # Define file path
     file_path = "tests_data.xlsx"
     df.to_excel(file_path, index=False)  # Save to Excel file
 
-    return FileResponse(file_path, filename="tests_data.xlsx",
+    return FileResponse(file_path, filename="load_test_data.xlsx",
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -76,5 +79,5 @@ def test_details(test_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/report/{test_id}", response_model=TestReport)
-def report(test_id: str, session: Session = Depends(get_session)):
-    return generate_report(test_id, session)
+async def report(test_id: str, session: Session = Depends(get_session)):
+    return await generate_report(test_id, session)

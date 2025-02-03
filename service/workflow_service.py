@@ -5,6 +5,7 @@ import sys
 import time
 import types
 import uuid
+from datetime import datetime
 
 import aiohttp
 import requests
@@ -187,15 +188,17 @@ async def async_status(test_id, session: Session):
 
 def get_test_details(test_id, session):
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
+    trigger_time = datetime.fromtimestamp(test_record.submitted_timestamp/1000).strftime("%d-%b-%Y, %H:%M:%S")
     test_details = TestDetails(env=test_record.env_name,
                                workflow_name=test_record.workflow_name,
-                               trigger_timestamp=test_record.submitted_timestamp,
+                               trigger_timestamp=trigger_time,
                                run_count=get_run_count_for_test_id(test_id, session))
 
     return test_details
 
 
-def generate_report(test_id, session):
+async def generate_report(test_id, session) -> TestReport:
+    await async_status(test_id, session)
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
     success_records = session.exec(select(LoadTest)
                                    .where(LoadTest.test_id == test_id)
@@ -209,16 +212,25 @@ def generate_report(test_id, session):
                                   ).all()
     failed_count = len(failed_records)
 
-    start_time = min([record.submitted_timestamp for record in success_records])
-    end_time = max([record.success_timestamp for record in success_records])
-    time_taken = (end_time - start_time) / (1000 * 60)
+    current_count = success_count + failed_count
+    if current_count == total_runs:
+        start_time = min([record.submitted_timestamp for record in success_records])
+        end_time = max([record.success_timestamp for record in success_records])
+        time_taken = (end_time - start_time) / (1000 * 60)
+        msg = "Successfully Completed Load Test !!"
+    else:
+        time_taken = 0
+        msg = "Job not yet completed. Please check after sometime"
+
+    trigger_time = datetime.fromtimestamp(test_record.submitted_timestamp/1000).strftime("%d-%b-%Y, %H:%M:%S")
     test_report = TestReport(env=test_record.env_name,
                              workflow_name=test_record.workflow_name,
-                             trigger_timestamp=test_record.submitted_timestamp,
+                             trigger_timestamp=trigger_time,
                              run_count=total_runs,
                              success_count=success_count,
                              failed_count=failed_count,
                              success_percentage=100 * (success_count / total_runs),
                              failed_percentage=100 * (failed_count / total_runs),
-                             time_taken_minutes=time_taken)
+                             time_taken_minutes=time_taken,
+                             msg = msg)
     return test_report

@@ -10,16 +10,17 @@ class TestDetails(BaseModel):
     env: str
     workflow_name: str
     run_count: int
-    trigger_timestamp: int
+    trigger_timestamp: str
 
 
 class TestReport(BaseModel):
     env: str
     workflow_name: str
     run_count: int
-    trigger_timestamp: int
+    trigger_timestamp: str
     success_count: int
     failed_count: int
     success_percentage: float
     failed_percentage: float
     time_taken_minutes: float
+    msg: str

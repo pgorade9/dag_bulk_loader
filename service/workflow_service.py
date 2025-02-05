@@ -26,7 +26,7 @@ statuses_for_retry = {x for x in range(100, 600)}
 statuses_for_retry.remove(200)
 retry_options = ExponentialRetry(attempts=4, statuses=statuses_for_retry)
 
-actual = 0
+triggerred_jobs = 0
 
 
 def get_token(env):
@@ -67,7 +67,7 @@ async def on_request_start(
 
 async def trigger_workflow(env, dag_name, token, retry_options, test_id, session: Session):
     TIME_OUT = 1500
-    global actual
+    global triggerred_jobs
     print("Triggering_workflow")
 
     workflow_url = f"{keyvault[env]["seds_dns_host"]}/api/workflow/v1/workflow/{dag_name}/workflowRun"
@@ -85,34 +85,28 @@ async def trigger_workflow(env, dag_name, token, retry_options, test_id, session
     response = await retry_client.post(workflow_url, headers=headers, data=json.dumps(payload), timeout=TIME_OUT,
                                        retry_options=retry_options)
     json_response = await response.json()
-    print(json_response)
+    # print(json_response)
     await retry_client.close()
     if response.status == 200:
-        actual += 1
-        print(f"{actual}: Workflow Run ID = {json_response['runId']}")
+        triggerred_jobs += 1
+        print(f"{triggerred_jobs}: Workflow Run ID = {json_response['runId']}")
+
+        # Extract Record from database and update for a single job trigger of the test_unit.
         test_unit = LoadTest(test_id=test_id,
                              correlation_id=response.headers['correlation-id'],
                              run_id=json_response['runId'],
                              submitted_timestamp=json_response['startTimeStamp'],
                              workflow_name=json_response['workflowId'],
                              env_name=env)
-        print(test_unit)
-        # results = session.exec(select(LoadTest)).all()
-        # for result in results:
-        #     print("*****************************")
-        #     print(result)
+        # print(f"workflow status = {json_response['status']}")
         session.add(test_unit)
         session.commit()
         session.refresh(test_unit)
-        # with Session(engine) as session1:
-        #     session1.add(test_unit)
-        #     session1.commit()
-        #     session1.refresh(test_unit)
 
 
-async def async_workflow(env, dag_name, count, test_id, session: Session):
+async def async_workflow(env, dag_name, batch_size, test_id, session: Session):
     token = get_token(env)
-    tasks = [trigger_workflow(env, dag_name, token, retry_options, test_id, session) for _ in range(count)]
+    tasks = [trigger_workflow(env, dag_name, token, retry_options, test_id, session) for _ in range(batch_size)]
     await asyncio.gather(*tasks)
 
 
@@ -123,8 +117,10 @@ async def sleep():
 def load(env, dag, count, session: Session):
     test_id = str(uuid.uuid4())
 
-    batch_size = 1
-
+    batch_size = 10 if count % 10 == 0 else 1
+    print("**********************************")
+    print(f"{batch_size=}")
+    print("**********************************")
     batches = int(count / batch_size)
     for i in range(0, batches):
         asyncio.run(async_workflow(env, dag, batch_size, test_id, session))

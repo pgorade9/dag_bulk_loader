@@ -16,7 +16,7 @@ def get_summary(session: Session):
     tests_summary = {}
     for test_id in unique_test_ids:
         count = get_run_count_for_test_id(test_id, session)
-        workflow_id = session.exec(select(LoadTest)).first().workflow_name
+        workflow_id = session.exec(select(LoadTest).where(LoadTest.test_id==test_id)).first().workflow_name
         test_summary = TestSummary(test_id=test_id, run_count=count, workflow_name=workflow_id)
         tests_summary.update({test_id: test_summary})
     return tests_summary

@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import sys
-import time
 import types
 import uuid
 from datetime import datetime
@@ -11,7 +10,6 @@ import aiohttp
 import requests
 from aiohttp import TraceConfig
 from aiohttp_retry import RetryClient, ExponentialRetry
-from sqlalchemy import func
 from sqlmodel import Session, select
 
 from configuration import keyvault
@@ -110,10 +108,6 @@ async def async_workflow(env, dag_name, batch_size, test_id, session: Session):
     await asyncio.gather(*tasks)
 
 
-async def sleep():
-    await asyncio.sleep(1)
-
-
 def load(env, dag, count, session: Session):
     test_id = str(uuid.uuid4())
 
@@ -141,7 +135,7 @@ async def workflow_status(aio_session, env, dag_name, test_record, token, sessio
     try:
         async with aio_session.get(workflow_url, headers=headers) as response:
             json_response = await response.json()
-            print(json_response)
+            # print(json_response)
             if response.status == 200 and json_response['status'] in ['success', 'failed']:
                 # record = session.exec(select(LoadTest).where(LoadTest.run_id == run_id)).first()
                 test_record.success_timestamp = json_response['endTimeStamp'] if json_response[
@@ -163,7 +157,7 @@ async def workflow_status(aio_session, env, dag_name, test_record, token, sessio
 
 
 async def async_status(test_id, session: Session):
-    print("I am in async status")
+    # print("I am in async status")
     test_record = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)).first()
     env = test_record.env_name
     dag_name = test_record.workflow_name
@@ -172,9 +166,6 @@ async def async_status(test_id, session: Session):
     tests = session.exec(select(LoadTest).where(LoadTest.test_id == test_id)
                          .where(LoadTest.success_timestamp.is_(None))
                          ).all()
-    for test in tests:
-        print(test.run_id)
-        print(f"{test.success_timestamp is None}")
 
     async with aiohttp.ClientSession() as aio_session:
         token = get_token(env)
